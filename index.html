@@ -195,6 +195,7 @@
   let device = null, rx = null, tx = null;
   let conectado = false;
   let modoAuto = false;
+  let notif = true;   // false si el ESP32 no permitió notificaciones
 
   // ---------- Envío de órdenes (en fila para no chocar con operaciones GATT) ----------
   let cola = Promise.resolve();
@@ -283,8 +284,17 @@
   botonMantener($('btnDer'),    'R');
 
   // ---------- Direccionales (alternan encendido/apagado) ----------
-  $('btnSigIzq').addEventListener('click', () => { if (conectado && !modoAuto) enviar('l', true); });
-  $('btnSigDer').addEventListener('click', () => { if (conectado && !modoAuto) enviar('r', true); });
+  function alternarSenal(cmd, btnId, indId) {
+    if (!conectado || modoAuto) return;
+    enviar(cmd, true);
+    if (!notif) {   // sin notificaciones, la web lleva la cuenta por su cuenta
+      const on = !$(btnId).classList.contains('sig-on');
+      $(btnId).classList.toggle('sig-on', on);
+      $(indId).classList.toggle('on', on);
+    }
+  }
+  $('btnSigIzq').addEventListener('click', () => alternarSenal('l', 'btnSigIzq', 'indIzq'));
+  $('btnSigDer').addEventListener('click', () => alternarSenal('r', 'btnSigDer', 'indDer'));
 
   // ---------- Selector de modo ----------
   $('swModo').addEventListener('change', e => {
@@ -316,6 +326,7 @@
       alert('Este navegador no permite Web Bluetooth. Usa Chrome en Android o en computador (no funciona en iPhone).');
       return;
     }
+    let paso = 'buscar dispositivo';
     try {
       $('btnConn').disabled = true;
       $('pillConn').textContent = 'Buscando…';
@@ -325,19 +336,33 @@
       });
       device.addEventListener('gattserverdisconnected', onDesconectado);
       $('pillConn').textContent = 'Conectando…';
+      paso = 'conectar al ESP32';
       const server = await device.gatt.connect();
+      paso = 'encontrar el servicio';
       const servicio = await server.getPrimaryService(SERVICE);
+      paso = 'encontrar las características';
       rx = await servicio.getCharacteristic(RX_UUID);
       tx = await servicio.getCharacteristic(TX_UUID);
-      await tx.startNotifications();
-      tx.addEventListener('characteristicvaluechanged', onEstado);
+
+      // Las notificaciones (estado en vivo) son opcionales: si fallan, los controles siguen funcionando
+      notif = true;
+      try {
+        paso = 'activar notificaciones';
+        await tx.startNotifications();
+        tx.addEventListener('characteristicvaluechanged', onEstado);
+      } catch (e) {
+        console.warn('Sin notificaciones:', e);
+        notif = false;
+      }
+
       setConexion(true);
       setModo(false);
+      if (!notif) $('aviso').textContent = 'Conectado sin estado en vivo (el ESP32 no permitió notificaciones). Los controles funcionan.';
     } catch (err) {
       console.warn(err);
       setConexion(false);
       if (err && err.name !== 'NotFoundError') {
-        alert('No se pudo conectar: ' + (err.message || err));
+        alert('No se pudo conectar (paso: ' + paso + '): ' + (err.message || err));
       }
     } finally {
       $('btnConn').disabled = false;
