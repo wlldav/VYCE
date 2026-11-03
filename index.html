@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Control Carro BLE</title>
+<style>
+  :root {
+    --bg: #e6e8eb;
+    --card: #ffffff;
+    --ink: #16181d;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --verde: #22c55e;
+    --rojo: #ef4444;
+    --ambar: #f5a300;
+    --azul: #2563eb;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  body { display: flex; align-items: center; justify-content: center; padding: 10px; min-height: 100vh; }
+
+  .app {
+    width: 100%; max-width: 920px;
+    background: var(--card); border-radius: 28px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.12), inset 0 0 0 1px rgba(0,0,0,.04);
+    padding: 14px 22px 18px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* ---------- Barra superior ---------- */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .top h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+  .conn { display: flex; align-items: center; gap: 10px; }
+  .pill { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: #f3f4f6; color: var(--muted); }
+  .pill.ok { background: #dcfce7; color: #166534; }
+  .btn-conn {
+    border: 0; border-radius: 10px; padding: 9px 14px; font-size: 14px; font-weight: 600;
+    background: var(--azul); color: #fff; cursor: pointer;
+  }
+  .btn-conn.desc { background: #111; }
+
+  /* ---------- Modo + Estado ---------- */
+  .fila { display: flex; gap: 12px; flex-wrap: wrap; }
+  .bloque { flex: 1 1 280px; border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; }
+  .bloque h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1.2px; color: var(--muted); font-weight: 700; }
+
+  .modo { display: flex; align-items: center; gap: 12px; font-size: 15px; }
+  .modo span { color: var(--muted); font-weight: 600; transition: color .15s; }
+  .modo span.act { color: var(--ink); }
+  .sw { position: relative; width: 58px; height: 32px; display: inline-block; }
+  .sw input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; inset: 0; background: #9ca3af; border-radius: 999px; transition: .2s; cursor: pointer; }
+  .slider::before {
+    content: ""; position: absolute; width: 26px; height: 26px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .sw input:checked + .slider { background: var(--verde); }
+  .sw input:checked + .slider::before { transform: translateX(26px); }
+  .sw input:disabled + .slider { opacity: .45; cursor: not-allowed; }
+
+  .indicadores { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 14px; align-items: center; }
+  .ind { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #d1d5db; transition: background .1s, box-shadow .1s; }
+  .ind.rojo.on .dot   { background: var(--rojo);  box-shadow: 0 0 10px var(--rojo); }
+  .ind.ambar.on .dot  { background: var(--ambar); box-shadow: 0 0 10px var(--ambar); animation: parp 1s steps(1) infinite; }
+  .ind.on { color: var(--ink); }
+  @keyframes parp { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .2; } }
+  .dato { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Controles ---------- */
+  .controles h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1.2px; color: var(--muted); font-weight: 700; }
+  .controles .pad { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; padding: 4px 6px 2px; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .der { display: flex; flex-direction: column; gap: 20px; align-items: center; }
+  .rowb { display: flex; gap: 14px; }
+  .rowb.sig { gap: 26px; }
+
+  .btn {
+    width: 66px; height: 66px; border-radius: 14px; border: 0; padding: 0;
+    background: #111; display: grid; place-items: center; cursor: pointer;
+    touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    box-shadow: 0 3px 0 #000, 0 5px 10px rgba(0,0,0,.25);
+    transition: transform .05s, background .1s, box-shadow .05s;
+  }
+  .btn svg { width: 36px; height: 36px; pointer-events: none; }
+  .btn.circ { border-radius: 50%; }
+  .btn.pulsado { transform: translateY(2px) scale(.96); background: #2b2b2b; box-shadow: 0 1px 0 #000; }
+  .btn.sig-on { background: #0f2a17; box-shadow: 0 0 0 3px var(--verde), 0 3px 10px rgba(34,197,94,.45); }
+
+  .controles.off .pad { opacity: .3; pointer-events: none; filter: grayscale(.4); }
+  .aviso { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; min-height: 16px; }
+
+  @media (max-height: 420px) {
+    .app { padding: 8px 16px 10px; gap: 8px; border-radius: 22px; }
+    .bloque { padding: 6px 12px; }
+    .btn { width: 56px; height: 56px; }
+    .controles .pad { align-items: center; }
+    .der { gap: 12px; }
+    .col { gap: 10px; }
+  }
+  @media (max-width: 560px) {
+    .btn { width: 60px; height: 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <h1>Carro BLE</h1>
+    <div class="conn">
+      <span class="pill" id="pillConn">Desconectado</span>
+      <button class="btn-conn" id="btnConn">Conectar</button>
+    </div>
+  </div>
+
+  <div class="fila">
+    <div class="bloque">
+      <h2>MODO</h2>
+      <div class="modo">
+        <span id="txtManual" class="act">Manual</span>
+        <label class="sw">
+          <input type="checkbox" id="swModo" disabled>
+          <span class="slider"></span>
+        </label>
+        <span id="txtAuto">Automático</span>
+      </div>
+    </div>
+
+    <div class="bloque">
+      <h2>ESTADO</h2>
+      <div class="indicadores">
+        <div class="ind rojo" id="indRojo"><span class="dot"></span>Freno / reversa</div>
+        <div class="ind ambar" id="indIzq"><span class="dot"></span>Dir. izq.</div>
+        <div class="ind ambar" id="indDer"><span class="dot"></span>Dir. der.</div>
+        <div class="ind dato" id="indMov">Movimiento: —</div>
+        <div class="ind dato" id="indDist">Distancia: —</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controles off" id="controles">
+    <h2>CONTROLES</h2>
+    <div class="pad">
+      <div class="col">
+        <button class="btn" id="btnArriba" aria-label="Avanzar">
+          <svg viewBox="0 0 24 24"><path d="M12 3 L4 12 H9 V21 H15 V12 H20 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="btn" id="btnAbajo" aria-label="Retroceder">
+          <svg viewBox="0 0 24 24"><path d="M12 21 L4 12 H9 V3 H15 V12 H20 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="der">
+        <div class="rowb">
+          <button class="btn" id="btnIzq" aria-label="Girar a la izquierda">
+            <svg viewBox="0 0 24 24"><path d="M3 12 L12 4 V9 H21 V15 H12 V20 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="btn" id="btnDer" aria-label="Girar a la derecha">
+            <svg viewBox="0 0 24 24"><path d="M21 12 L12 4 V9 H3 V15 H12 V20 Z" fill="#fff" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="rowb sig">
+          <button class="btn circ" id="btnSigIzq" aria-label="Direccional izquierda">
+            <svg viewBox="0 0 24 24"><path d="M3 12 L12 4 V9 H21 V15 H12 V20 Z" fill="#22c55e" stroke="#22c55e" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="btn circ" id="btnSigDer" aria-label="Direccional derecha">
+            <svg viewBox="0 0 24 24"><path d="M21 12 L12 4 V9 H3 V15 H12 V20 Z" fill="#22c55e" stroke="#22c55e" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="aviso" id="aviso">Conéctate para empezar.</div>
+  </div>
+
+</div>
+
+<script>
+(() => {
+  // Deben coincidir con los del código del ESP32
+  const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+  const RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // la web escribe aquí
+  const TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // el ESP32 avisa su estado aquí
+  const NOMBRE  = 'CarroESP32';
+
+  const $ = id => document.getElementById(id);
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  let device = null, rx = null, tx = null;
+  let conectado = false;
+  let modoAuto = false;
+
+  // ---------- Envío de órdenes (en fila para no chocar con operaciones GATT) ----------
+  let cola = Promise.resolve();
+  let pendientes = 0;
+  function enviar(texto, critico = true) {
+    if (!rx) return;
+    if (!critico && pendientes >= 2) return;   // las repeticiones de movimiento se descartan si hay atasco
+    pendientes++;
+    const datos = enc.encode(texto);
+    cola = cola
+      .then(() => (rx.writeValueWithoutResponse ? rx.writeValueWithoutResponse(datos) : rx.writeValue(datos)))
+      .catch(e => console.warn('Error al enviar', e))
+      .finally(() => { pendientes--; });
+  }
+
+  // ---------- Interfaz ----------
+  function refrescarHabilitado() {
+    const controlesOn = conectado && !modoAuto;
+    $('controles').classList.toggle('off', !controlesOn);
+    $('swModo').disabled = !conectado;
+    $('txtManual').classList.toggle('act', !modoAuto);
+    $('txtAuto').classList.toggle('act', modoAuto);
+    $('swModo').checked = modoAuto;
+    if (!conectado) $('aviso').textContent = 'Conéctate para empezar.';
+    else if (modoAuto) $('aviso').textContent = 'Modo automático: los controles están deshabilitados.';
+    else $('aviso').textContent = 'Mantén presionado para moverte. Suelta para parar.';
+  }
+
+  function setModo(auto) {
+    modoAuto = auto;
+    refrescarHabilitado();
+  }
+
+  const nombresMov = { F: 'Avanzando', B: 'Retrocediendo', L: 'Girando izq.', R: 'Girando der.', S: 'Detenido' };
+
+  function onEstado(ev) {
+    const t = dec.decode(ev.target.value);
+    const p = t.split(',');
+    if (p.length < 6) return;
+    setModo(p[0] === 'A');
+    $('indMov').textContent = 'Movimiento: ' + (nombresMov[p[1]] || '—');
+    $('indRojo').classList.toggle('on', p[2] === '1');
+    $('indIzq').classList.toggle('on', p[3] === '1');
+    $('indDer').classList.toggle('on', p[4] === '1');
+    $('btnSigIzq').classList.toggle('sig-on', p[3] === '1');
+    $('btnSigDer').classList.toggle('sig-on', p[4] === '1');
+    const d = parseInt(p[5], 10);
+    $('indDist').textContent = 'Distancia: ' + (d >= 100 ? '+100' : d) + ' cm';
+  }
+
+  function limpiarIndicadores() {
+    ['indRojo', 'indIzq', 'indDer'].forEach(id => $(id).classList.remove('on'));
+    $('btnSigIzq').classList.remove('sig-on');
+    $('btnSigDer').classList.remove('sig-on');
+    $('indMov').textContent = 'Movimiento: —';
+    $('indDist').textContent = 'Distancia: —';
+  }
+
+  // ---------- Botones de movimiento: se mueve mientras se mantiene presionado ----------
+  function botonMantener(btn, cmd) {
+    let timer = null;
+    const iniciar = e => {
+      e.preventDefault();
+      if (timer || !conectado || modoAuto) return;
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      btn.classList.add('pulsado');
+      enviar(cmd, true);
+      timer = setInterval(() => enviar(cmd, false), 150);  // la placa se detiene si deja de recibirlo
+    };
+    const terminar = () => {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      btn.classList.remove('pulsado');
+      enviar('S', true);
+    };
+    btn.addEventListener('pointerdown', iniciar);
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => btn.addEventListener(ev, terminar));
+    btn.addEventListener('contextmenu', e => e.preventDefault());
+    window.addEventListener('blur', terminar);
+  }
+
+  botonMantener($('btnArriba'), 'F');
+  botonMantener($('btnAbajo'),  'B');
+  botonMantener($('btnIzq'),    'L');
+  botonMantener($('btnDer'),    'R');
+
+  // ---------- Direccionales (alternan encendido/apagado) ----------
+  $('btnSigIzq').addEventListener('click', () => { if (conectado && !modoAuto) enviar('l', true); });
+  $('btnSigDer').addEventListener('click', () => { if (conectado && !modoAuto) enviar('r', true); });
+
+  // ---------- Selector de modo ----------
+  $('swModo').addEventListener('change', e => {
+    if (!conectado) { e.target.checked = modoAuto; return; }
+    setModo(e.target.checked);
+    enviar(e.target.checked ? 'A' : 'M', true);
+  });
+
+  // ---------- Conexión Web Bluetooth ----------
+  function setConexion(ok) {
+    conectado = ok;
+    $('pillConn').textContent = ok ? 'Conectado' : 'Desconectado';
+    $('pillConn').classList.toggle('ok', ok);
+    $('btnConn').textContent = ok ? 'Desconectar' : 'Conectar';
+    $('btnConn').classList.toggle('desc', ok);
+    if (!ok) {
+      rx = null; tx = null;
+      limpiarIndicadores();
+    }
+    refrescarHabilitado();
+  }
+
+  function onDesconectado() {
+    setConexion(false);
+  }
+
+  async function conectar() {
+    if (!navigator.bluetooth) {
+      alert('Este navegador no permite Web Bluetooth. Usa Chrome en Android o en computador (no funciona en iPhone).');
+      return;
+    }
+    try {
+      $('btnConn').disabled = true;
+      $('pillConn').textContent = 'Buscando…';
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ namePrefix: 'Carro' }],
+        optionalServices: [SERVICE]
+      });
+      device.addEventListener('gattserverdisconnected', onDesconectado);
+      $('pillConn').textContent = 'Conectando…';
+      const server = await device.gatt.connect();
+      const servicio = await server.getPrimaryService(SERVICE);
+      rx = await servicio.getCharacteristic(RX_UUID);
+      tx = await servicio.getCharacteristic(TX_UUID);
+      await tx.startNotifications();
+      tx.addEventListener('characteristicvaluechanged', onEstado);
+      setConexion(true);
+      setModo(false);
+    } catch (err) {
+      console.warn(err);
+      setConexion(false);
+      if (err && err.name !== 'NotFoundError') {
+        alert('No se pudo conectar: ' + (err.message || err));
+      }
+    } finally {
+      $('btnConn').disabled = false;
+    }
+  }
+
+  function desconectar() {
+    if (device && device.gatt.connected) {
+      enviar('S', true);
+      cola.finally(() => device.gatt.disconnect());
+    }
+  }
+
+  $('btnConn').addEventListener('click', () => (conectado ? desconectar() : conectar()));
+
+  setConexion(false);
+})();
+</script>
+</body>
+</html>
